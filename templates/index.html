@@ -1,0 +1,789 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JSON Field Selector</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            font-weight: 300;
+        }
+
+        .header p {
+            opacity: 0.9;
+            font-size: 1.1rem;
+        }
+
+        .content {
+            padding: 40px;
+        }
+
+        .step {
+            margin-bottom: 40px;
+            padding: 30px;
+            border: 2px dashed #e0e0e0;
+            border-radius: 8px;
+            transition: all 0.3s ease;
+        }
+
+        .step.active {
+            border-color: #667eea;
+            background: #f8f9ff;
+        }
+
+        .step h2 {
+            color: #2c3e50;
+            margin-bottom: 20px;
+            font-size: 1.5rem;
+            display: flex;
+            align-items: center;
+        }
+
+        .step-number {
+            background: #667eea;
+            color: white;
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-right: 15px;
+            font-weight: bold;
+        }
+
+        .upload-area {
+            border: 3px dashed #ccc;
+            border-radius: 8px;
+            padding: 40px;
+            text-align: center;
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+
+        .upload-area:hover {
+            border-color: #667eea;
+            background: #f8f9ff;
+        }
+
+        .upload-area.dragover {
+            border-color: #667eea;
+            background: #f0f4ff;
+        }
+
+        .upload-icon {
+            font-size: 3rem;
+            color: #ccc;
+            margin-bottom: 20px;
+        }
+
+        .file-input {
+            display: none;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 1rem;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            display: inline-block;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .fields-container {
+            max-height: 400px;
+            overflow-y: auto;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            padding: 20px;
+            background: #fafafa;
+        }
+
+        .field-tree {
+            font-family: 'Monaco', 'Menlo', monospace;
+        }
+
+        .field-node {
+            margin: 2px 0;
+        }
+
+        .field-item {
+            display: flex;
+            align-items: center;
+            padding: 4px 0;
+            cursor: pointer;
+            border-radius: 4px;
+            transition: background-color 0.2s;
+        }
+
+        .field-item:hover {
+            background-color: #f8f9ff;
+        }
+
+        .field-indent {
+            width: 20px;
+            display: inline-block;
+        }
+
+        .field-toggle {
+            width: 16px;
+            height: 16px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 12px;
+            color: #666;
+            margin-right: 4px;
+        }
+
+        .field-toggle:hover {
+            color: #333;
+        }
+
+        .field-toggle.empty {
+            width: 16px;
+        }
+
+        .field-checkbox {
+            margin-right: 8px;
+            transform: scale(1.1);
+        }
+
+        .field-label {
+            color: #2c3e50;
+            font-size: 0.9rem;
+            flex: 1;
+            user-select: none;
+        }
+
+        .field-label.parent {
+            font-weight: 600;
+            color: #1a365d;
+        }
+
+        .field-label.leaf {
+            color: #4a5568;
+        }
+
+        .field-children {
+            margin-left: 20px;
+            border-left: 1px solid #e2e8f0;
+            padding-left: 8px;
+        }
+
+        .field-children.collapsed {
+            display: none;
+        }
+
+        .field-type-indicator {
+            font-size: 0.75rem;
+            color: #718096;
+            margin-left: 8px;
+            font-style: italic;
+        }
+
+        .file-list {
+            background: #f8f9fa;
+            border-radius: 6px;
+            padding: 15px;
+            margin-top: 20px;
+        }
+
+        .file-items-container {
+            max-height: 200px; /* Approximately 5 lines */
+            overflow-y: auto;
+            border-radius: 4px;
+        }
+
+        .file-items-container::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .file-items-container::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 3px;
+        }
+
+        .file-items-container::-webkit-scrollbar-thumb {
+            background: #c1c1c1;
+            border-radius: 3px;
+        }
+
+        .file-items-container::-webkit-scrollbar-thumb:hover {
+            background: #a8a8a8;
+        }
+
+        .file-item {
+            display: flex;
+            align-items: center;
+            padding: 8px 0;
+            color: #495057;
+        }
+
+        .file-icon {
+            margin-right: 10px;
+            color: #667eea;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 20px;
+        }
+
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .error {
+            background: #fee;
+            color: #c33;
+            padding: 15px;
+            border-radius: 6px;
+            margin: 20px 0;
+            border-left: 4px solid #c33;
+        }
+
+        .success {
+            background: #efe;
+            color: #363;
+            padding: 15px;
+            border-radius: 6px;
+            margin: 20px 0;
+            border-left: 4px solid #363;
+        }
+
+        .select-all-controls {
+            margin-bottom: 20px;
+            padding: 15px;
+            background: white;
+            border-radius: 6px;
+            border: 1px solid #e0e0e0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>JSON Field Selector</h1>
+            <p>Upload JSON files and select which fields to extract</p>
+        </div>
+        
+        <div class="content">
+            <!-- Step 1: Upload Files -->
+            <div class="step active" id="step1">
+                <h2><span class="step-number">1</span>Upload JSON Files</h2>
+                <div class="upload-area" onclick="document.getElementById('fileInput').click()">
+                    <div class="upload-icon">📁</div>
+                    <p>Click here or drag and drop your JSON files</p>
+                    <p style="margin-top: 10px; color: #666; font-size: 0.9rem;">
+                        Select multiple JSON files from your drug_reports folder
+                    </p>
+                </div>
+                <input type="file" id="fileInput" class="file-input" multiple accept=".json">
+                
+                <div id="fileList" class="file-list" style="display: none;">
+                    <h4>Uploaded Files:</h4>
+                    <div class="file-items-container">
+                        <div id="fileItems"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Step 2: Select Fields -->
+            <div class="step" id="step2">
+                <h2><span class="step-number">2</span>Select Fields to Extract</h2>
+                <div id="fieldsSection" style="display: none;">
+                    <div class="select-all-controls">
+                        <button type="button" class="btn" onclick="selectAllFields()">Select All</button>
+                        <button type="button" class="btn" onclick="deselectAllFields()" style="margin-left: 10px;">Deselect All</button>
+                    </div>
+                    <div class="fields-container" id="fieldsContainer">
+                        <!-- Fields will be populated here -->
+                    </div>
+                    <div style="margin-top: 20px; padding: 20px; background: white; border-radius: 6px; border: 1px solid #e0e0e0;">
+                        <h4 style="margin-bottom: 15px; color: #2c3e50;">Download Location</h4>
+                        <div style="display: flex; gap: 10px; align-items: center;">
+                            <div style="flex: 1; padding: 10px; border: 1px solid #ddd; border-radius: 4px; background: #f8f9fa; font-family: 'Monaco', 'Menlo', monospace; font-size: 0.9rem; color: #666;" id="selectedPath">
+                                No folder selected (will use browser downloads)
+                            </div>
+                            <button type="button" class="btn" onclick="selectDownloadFolder()" style="padding: 10px 15px;">📁 Select Folder</button>
+                            <button type="button" class="btn" onclick="clearSelectedPath()" style="padding: 10px 15px; background: #6c757d;">Clear</button>
+                        </div>
+                        <p style="margin-top: 8px; color: #666; font-size: 0.85rem;">
+                            💡 Click "Select Folder" to choose where to save the results, or leave unselected to download through browser
+                        </p>
+                    </div>
+                    <button type="button" class="btn" onclick="processFiles()" id="processBtn" style="margin-top: 20px;" disabled>
+                        Generate Filtered Results
+                    </button>
+                </div>
+            </div>
+
+            <!-- Loading indicator -->
+            <div class="loading" id="loading">
+                <div class="spinner"></div>
+                <p>Processing files...</p>
+            </div>
+
+            <!-- Messages -->
+            <div id="messages"></div>
+        </div>
+    </div>
+
+    <script>
+        let uploadedFiles = [];
+        let availableFields = [];
+        let fieldHierarchy = {};
+        let selectedDirectoryHandle = null;
+        
+        // Check if File System Access API is supported
+        const supportsFileSystemAccess = 'showDirectoryPicker' in window;
+
+        // File upload handling
+        const fileInput = document.getElementById('fileInput');
+        const uploadArea = document.querySelector('.upload-area');
+
+        fileInput.addEventListener('change', handleFiles);
+
+        // Drag and drop
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('dragover');
+        });
+
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.classList.remove('dragover');
+        });
+
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('dragover');
+            const files = Array.from(e.dataTransfer.files).filter(f => f.name.endsWith('.json'));
+            if (files.length > 0) {
+                fileInput.files = e.dataTransfer.files;
+                handleFiles();
+            }
+        });
+
+        function handleFiles() {
+            const files = Array.from(fileInput.files);
+            const jsonFiles = files.filter(f => f.name.endsWith('.json'));
+            
+            if (jsonFiles.length === 0) {
+                showMessage('Please select JSON files only.', 'error');
+                return;
+            }
+
+            uploadFiles(jsonFiles);
+        }
+
+        function uploadFiles(files) {
+            const formData = new FormData();
+            files.forEach(file => formData.append('files', file));
+
+            showLoading(true);
+            clearMessages();
+
+            fetch('/upload', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                showLoading(false);
+                
+                if (data.error) {
+                    showMessage(data.error, 'error');
+                    return;
+                }
+
+                uploadedFiles = data.files;
+                availableFields = data.fields;
+                fieldHierarchy = data.hierarchy;
+                
+                displayUploadedFiles(data.files);
+                displayFieldsHierarchy(data.hierarchy);
+                activateStep(2);
+                
+                let message = `Successfully analyzed ${data.files.length} JSON files and found ${data.fields.length} unique fields.`;
+                if (data.warnings) {
+                    message += ` ${data.warnings.message}`;
+                    console.warn('File processing warnings:', data.warnings.details);
+                }
+                showMessage(message, 'success');
+            })
+            .catch(error => {
+                showLoading(false);
+                showMessage('Error uploading files: ' + error.message, 'error');
+            });
+        }
+
+        function displayUploadedFiles(files) {
+            const fileList = document.getElementById('fileList');
+            const fileItems = document.getElementById('fileItems');
+            
+            fileItems.innerHTML = files.map(file => 
+                `<div class="file-item">
+                    <span class="file-icon">📄</span>
+                    ${file}
+                </div>`
+            ).join('');
+            
+            fileList.style.display = 'block';
+        }
+
+        function displayFieldsHierarchy(hierarchy) {
+            const fieldsSection = document.getElementById('fieldsSection');
+            const fieldsContainer = document.getElementById('fieldsContainer');
+            
+            fieldsContainer.innerHTML = '<div class="field-tree">' + renderFieldNode(hierarchy, 0) + '</div>';
+            fieldsSection.style.display = 'block';
+        }
+
+        function renderFieldNode(node, depth) {
+            let html = '';
+            
+            for (const [key, value] of Object.entries(node)) {
+                const hasChildren = Object.keys(value.children).length > 0;
+                const isParent = hasChildren;
+                const fieldPath = value.path;
+                
+                html += `<div class="field-node">`;
+                
+                // Main field item
+                html += `<div class="field-item" data-path="${fieldPath}">`;
+                
+                // Indentation
+                html += '<span class="field-indent"></span>'.repeat(depth);
+                
+                // Toggle button for parents
+                if (hasChildren) {
+                    html += `<span class="field-toggle" onclick="toggleFieldNode(this)" data-expanded="true">▼</span>`;
+                } else {
+                    html += `<span class="field-toggle empty"></span>`;
+                }
+                
+                // Checkbox
+                html += `<input type="checkbox" class="field-checkbox" value="${fieldPath}" onchange="handleFieldSelection(this)">`;
+                
+                // Label
+                const labelClass = isParent ? 'parent' : 'leaf';
+                html += `<span class="field-label ${labelClass}" onclick="toggleFieldCheckbox(this)">${key}</span>`;
+                
+                // Type indicator
+                if (key.includes('[]')) {
+                    html += '<span class="field-type-indicator">array</span>';
+                } else if (isParent) {
+                    html += '<span class="field-type-indicator">object</span>';
+                }
+                
+                html += `</div>`;
+                
+                // Children
+                if (hasChildren) {
+                    html += `<div class="field-children">`;
+                    html += renderFieldNode(value.children, depth + 1);
+                    html += `</div>`;
+                }
+                
+                html += `</div>`;
+            }
+            
+            return html;
+        }
+
+        function selectAllFields() {
+            const checkboxes = document.querySelectorAll('.field-checkbox');
+            checkboxes.forEach(cb => cb.checked = true);
+            updateProcessButton();
+        }
+
+        function deselectAllFields() {
+            const checkboxes = document.querySelectorAll('.field-checkbox');
+            checkboxes.forEach(cb => cb.checked = false);
+            updateProcessButton();
+        }
+
+        function toggleFieldNode(toggleElement) {
+            const isExpanded = toggleElement.dataset.expanded === 'true';
+            const fieldItem = toggleElement.closest('.field-item');
+            const children = fieldItem.parentNode.querySelector('.field-children');
+            
+            if (children) {
+                if (isExpanded) {
+                    children.classList.add('collapsed');
+                    toggleElement.textContent = '▶';
+                    toggleElement.dataset.expanded = 'false';
+                } else {
+                    children.classList.remove('collapsed');
+                    toggleElement.textContent = '▼';
+                    toggleElement.dataset.expanded = 'true';
+                }
+            }
+        }
+
+        function toggleFieldCheckbox(labelElement) {
+            const fieldItem = labelElement.closest('.field-item');
+            const checkbox = fieldItem.querySelector('.field-checkbox');
+            checkbox.checked = !checkbox.checked;
+            handleFieldSelection(checkbox);
+        }
+
+        function handleFieldSelection(checkbox) {
+            const fieldPath = checkbox.value;
+            const isChecked = checkbox.checked;
+            
+            // If selecting a parent field, also select/deselect all children
+            if (isChecked) {
+                selectChildFields(fieldPath, true);
+            } else {
+                selectChildFields(fieldPath, false);
+            }
+            
+            // Update parent selection state
+            updateParentSelection(fieldPath);
+            
+            updateProcessButton();
+        }
+
+        function selectChildFields(parentPath, checked) {
+            const checkboxes = document.querySelectorAll('.field-checkbox');
+            checkboxes.forEach(cb => {
+                if (cb.value.startsWith(parentPath + '.') || cb.value.startsWith(parentPath + '[')) {
+                    cb.checked = checked;
+                }
+            });
+        }
+
+        function updateParentSelection(fieldPath) {
+            // Find parent path
+            const pathParts = fieldPath.split('.');
+            if (pathParts.length > 1) {
+                const parentPath = pathParts.slice(0, -1).join('.');
+                const parentCheckbox = document.querySelector(`input[value="${parentPath}"]`);
+                
+                if (parentCheckbox) {
+                    // Check if all children are selected
+                    const childCheckboxes = Array.from(document.querySelectorAll('.field-checkbox'))
+                        .filter(cb => cb.value.startsWith(parentPath + '.') || cb.value.startsWith(parentPath + '['));
+                    
+                    const allChildrenSelected = childCheckboxes.length > 0 && childCheckboxes.every(cb => cb.checked);
+                    parentCheckbox.checked = allChildrenSelected;
+                    
+                    // Recursively update parent's parent
+                    updateParentSelection(parentPath);
+                }
+            }
+        }
+
+        async function selectDownloadFolder() {
+            if (!supportsFileSystemAccess) {
+                showMessage('Directory selection not supported in this browser. Results will be downloaded normally.', 'error');
+                return;
+            }
+            
+            try {
+                selectedDirectoryHandle = await window.showDirectoryPicker();
+                document.getElementById('selectedPath').textContent = selectedDirectoryHandle.name;
+                showMessage('Download folder selected successfully!', 'success');
+            } catch (error) {
+                if (error.name !== 'AbortError') {
+                    showMessage('Error selecting folder: ' + error.message, 'error');
+                }
+            }
+        }
+        
+        function clearSelectedPath() {
+            selectedDirectoryHandle = null;
+            document.getElementById('selectedPath').textContent = 'No folder selected (will use browser downloads)';
+        }
+
+        function updateProcessButton() {
+            const checkedBoxes = document.querySelectorAll('.field-checkbox:checked');
+            const processBtn = document.getElementById('processBtn');
+            processBtn.disabled = checkedBoxes.length === 0;
+        }
+
+        async function processFiles() {
+            const checkedBoxes = document.querySelectorAll('.field-checkbox:checked');
+            const selectedFields = Array.from(checkedBoxes).map(cb => cb.value);
+            
+            if (selectedFields.length === 0) {
+                showMessage('Please select at least one field.', 'error');
+                return;
+            }
+
+            showLoading(true);
+            clearMessages();
+
+            // If directory is selected and supported, save directly to folder
+            if (selectedDirectoryHandle && supportsFileSystemAccess) {
+                try {
+                    await saveToSelectedDirectory(selectedFields);
+                } catch (error) {
+                    showLoading(false);
+                    showMessage('Error saving to selected folder: ' + error.message, 'error');
+                }
+            } else {
+                // Fallback to browser download
+                await downloadThroughBrowser(selectedFields);
+            }
+        }
+        
+        async function saveToSelectedDirectory(selectedFields) {
+            // Get processed data from server
+            const response = await fetch('/process-data', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ fields: selectedFields })
+            });
+            
+            const data = await response.json();
+            
+            if (!data.success) {
+                throw new Error(data.error || 'Unknown error');
+            }
+            
+            // Create file in selected directory
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+            const filename = `filtered_results_${timestamp}.txt`;
+            
+            const fileHandle = await selectedDirectoryHandle.getFileHandle(filename, { create: true });
+            const writable = await fileHandle.createWritable();
+            
+            await writable.write(data.content);
+            await writable.close();
+            
+            showLoading(false);
+            showMessage(`File saved successfully as: ${filename}`, 'success');
+        }
+        
+        async function downloadThroughBrowser(selectedFields) {
+            try {
+                const response = await fetch('/process', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ fields: selectedFields })
+                });
+                
+                if (response.ok) {
+                    const blob = await response.blob();
+                    
+                    // Download the file
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'filtered_results.txt';
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    document.body.removeChild(a);
+                    
+                    showLoading(false);
+                    showMessage('File downloaded successfully!', 'success');
+                } else {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || 'Unknown error');
+                }
+            } catch (error) {
+                showLoading(false);
+                showMessage('Error downloading file: ' + error.message, 'error');
+            }
+        }
+
+        function activateStep(stepNumber) {
+            document.querySelectorAll('.step').forEach(step => step.classList.remove('active'));
+            document.getElementById(`step${stepNumber}`).classList.add('active');
+        }
+
+        function showLoading(show) {
+            document.getElementById('loading').style.display = show ? 'block' : 'none';
+        }
+
+        function showMessage(message, type) {
+            const messages = document.getElementById('messages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = type;
+            messageDiv.textContent = message;
+            messages.appendChild(messageDiv);
+            
+            // Auto-remove success messages after 5 seconds
+            if (type === 'success') {
+                setTimeout(() => {
+                    if (messageDiv.parentNode) {
+                        messageDiv.parentNode.removeChild(messageDiv);
+                    }
+                }, 5000);
+            }
+        }
+
+        function clearMessages() {
+            document.getElementById('messages').innerHTML = '';
+        }
+    </script>
+</body>
+</html>
