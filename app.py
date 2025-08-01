@@ -10,11 +10,6 @@ from werkzeug.exceptions import RequestEntityTooLarge
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 1024 * 1024 * 1024  # 1GB max file size
-app.config['UPLOAD_FOLDER'] = 'uploads'
-app.config['DEFAULT_DOWNLOAD_FOLDER'] = os.path.expanduser('~/Downloads')  # Default to user's Downloads folder
-
-# Ensure upload folder exists
-os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
 @app.errorhandler(RequestEntityTooLarge)
 def handle_file_too_large(e):
@@ -22,46 +17,7 @@ def handle_file_too_large(e):
         'error': 'Upload size too large. Please upload fewer files or smaller files. Maximum size is 1GB.'
     }), 413
 
-def cleanup_uploads():
-    """Clean up uploaded files to keep server stateless"""
-    try:
-        for filename in os.listdir(app.config['UPLOAD_FOLDER']):
-            if filename.endswith('.json') or filename.endswith('.txt'):
-                filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-                os.remove(filepath)
-    except Exception as e:
-        print(f"Warning: Could not clean up uploads: {e}")
-
-def validate_download_path(path):
-    """Validate and sanitize download path"""
-    if not path:
-        return app.config['DEFAULT_DOWNLOAD_FOLDER'], None
-    
-    try:
-        # Expand user path (~/Downloads -> /Users/username/Downloads)
-        expanded_path = os.path.expanduser(path)
-        # Get absolute path
-        abs_path = os.path.abspath(expanded_path)
-        
-        # Check if directory exists
-        if not os.path.exists(abs_path):
-            try:
-                os.makedirs(abs_path, exist_ok=True)
-            except OSError as e:
-                return None, f"Cannot create directory: {str(e)}"
-        
-        # Check if it's actually a directory
-        if not os.path.isdir(abs_path):
-            return None, "Path is not a directory"
-        
-        # Check if we can write to it
-        if not os.access(abs_path, os.W_OK):
-            return None, "No write permission for this directory"
-        
-        return abs_path, None
-        
-    except Exception as e:
-        return None, f"Invalid path: {str(e)}"
+# No cleanup needed - all processing is done in memory
 
 def extract_all_fields(json_data, prefix=""):
     """Recursively extract all field paths from a JSON object"""
@@ -184,42 +140,40 @@ def upload_files():
     if not files or all(f.filename == '' for f in files):
         return jsonify({'error': 'No files selected'}), 400
     
-    # Clear previous uploads
-    for filename in os.listdir(app.config['UPLOAD_FOLDER']):
-        os.remove(os.path.join(app.config['UPLOAD_FOLDER'], filename))
-    
     json_files = []
     all_fields = set()
     invalid_files = []
+    file_data = {}  # Store file data in memory
     
     for file in files:
         if file and file.filename.endswith('.json'):
             filename = secure_filename(file.filename)
-            filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-            file.save(filepath)
             
             try:
-                with open(filepath, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                    json_files.append(filename)
-                    all_fields.update(extract_all_fields(data))
+                # Read file content directly from memory
+                content = file.read().decode('utf-8')
+                data = json.loads(content)
+                
+                # Store in memory for later processing
+                file_data[filename] = data
+                json_files.append(filename)
+                all_fields.update(extract_all_fields(data))
+                
             except json.JSONDecodeError as e:
                 invalid_files.append(f"{filename}: {str(e)}")
-                # Remove invalid file
-                if os.path.exists(filepath):
-                    os.remove(filepath)
                 continue
             except Exception as e:
                 invalid_files.append(f"{filename}: {str(e)}")
-                # Remove problematic file
-                if os.path.exists(filepath):
-                    os.remove(filepath)
                 continue
     
     if not json_files:
         return jsonify({'error': 'No valid JSON files found'}), 400
     
     field_hierarchy = build_field_hierarchy(all_fields)
+    
+    # Store file data in session or cache for processing
+    # For simplicity, we'll use a global variable (in production, use Redis or similar)
+    app.config['CURRENT_FILES'] = file_data
     
     response_data = {
         'files': json_files,
@@ -280,26 +234,26 @@ def process_data():
     if not selected_fields:
         return jsonify({'error': 'No fields selected'}), 400
     
+    # Get file data from memory
+    file_data = app.config.get('CURRENT_FILES', {})
+    if not file_data:
+        return jsonify({'error': 'No files available. Please upload files first.'}), 400
+    
     results = []
     
-    for filename in os.listdir(app.config['UPLOAD_FOLDER']):
-        if filename.endswith('.json'):
-            filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+    for filename, original_data in file_data.items():
+        try:
+            # Create filtered object maintaining hierarchical structure
+            filtered_data = create_hierarchical_output(original_data, selected_fields)
             
-            try:
-                with open(filepath, 'r', encoding='utf-8') as f:
-                    original_data = json.load(f)
-                
-                # Create filtered object maintaining hierarchical structure
-                filtered_data = create_hierarchical_output(original_data, selected_fields)
-                
-                results.append({
-                    'filename': filename,
-                    'data': filtered_data
-                })
-                
-            except json.JSONDecodeError:
-                continue
+            results.append({
+                'filename': filename,
+                'data': filtered_data
+            })
+            
+        except Exception as e:
+            # Skip files that can't be processed
+            continue
     
     # Create content string
     timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -315,9 +269,6 @@ def process_data():
         content_lines.append(json.dumps(result['data'], indent=2, ensure_ascii=False))
         content_lines.append("")
     
-    # Clean up uploaded files after processing
-    cleanup_uploads()
-    
     return jsonify({
         'success': True,
         'content': '\n'.join(content_lines)
@@ -332,50 +283,54 @@ def process_files():
     if not selected_fields:
         return jsonify({'error': 'No fields selected'}), 400
     
+    # Get file data from memory
+    file_data = app.config.get('CURRENT_FILES', {})
+    if not file_data:
+        return jsonify({'error': 'No files available. Please upload files first.'}), 400
+    
     results = []
     
-    for filename in os.listdir(app.config['UPLOAD_FOLDER']):
-        if filename.endswith('.json'):
-            filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+    for filename, original_data in file_data.items():
+        try:
+            # Create filtered object maintaining hierarchical structure
+            filtered_data = create_hierarchical_output(original_data, selected_fields)
             
-            try:
-                with open(filepath, 'r', encoding='utf-8') as f:
-                    original_data = json.load(f)
-                
-                # Create filtered object maintaining hierarchical structure
-                filtered_data = create_hierarchical_output(original_data, selected_fields)
-                
-                results.append({
-                    'filename': filename,
-                    'data': filtered_data
-                })
-                
-            except json.JSONDecodeError:
-                continue
-    
-    # Create output file for browser download
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    output_filename = f'filtered_results_{timestamp}.txt'
-    output_path = os.path.join(app.config['UPLOAD_FOLDER'], output_filename)
-    
-    try:
-        with open(output_path, 'w', encoding='utf-8') as f:
-            f.write(f"// Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-            f.write(f"// Selected fields: {len(selected_fields)}\n")
-            f.write(f"// Processed files: {len(results)}\n\n")
+            results.append({
+                'filename': filename,
+                'data': filtered_data
+            })
             
-            for result in results:
-                f.write(f"// File: {result['filename']}\n")
-                f.write(json.dumps(result['data'], indent=2, ensure_ascii=False))
-                f.write('\n\n')
-        
-        # Clean up uploaded files after creating download
-        cleanup_uploads()
-        
-        return send_file(output_path, as_attachment=True, download_name=output_filename)
-        
-    except Exception as e:
-        return jsonify({'error': f'Failed to create file: {str(e)}'}), 500
+        except Exception as e:
+            # Skip files that can't be processed
+            continue
+    
+    # Create content string
+    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    content_lines = [
+        f"// Generated on: {timestamp}",
+        f"// Selected fields: {len(selected_fields)}",
+        f"// Processed files: {len(results)}",
+        ""
+    ]
+    
+    for result in results:
+        content_lines.append(f"// File: {result['filename']}")
+        content_lines.append(json.dumps(result['data'], indent=2, ensure_ascii=False))
+        content_lines.append("")
+    
+    content = '\n'.join(content_lines)
+    
+    # Return content as downloadable file
+    from flask import Response
+    timestamp_filename = datetime.now().strftime('%Y%m%d_%H%M%S')
+    
+    return Response(
+        content,
+        mimetype='text/plain',
+        headers={
+            'Content-Disposition': f'attachment; filename=filtered_results_{timestamp_filename}.txt'
+        }
+    )
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=False)
