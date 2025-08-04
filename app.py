@@ -225,54 +225,7 @@ def create_hierarchical_output(original_data, selected_fields):
     
     return filtered_data
 
-@app.route('/process-data', methods=['POST'])
-def process_data():
-    """Return processed data as JSON content for File System Access API"""
-    data = request.get_json()
-    selected_fields = data.get('fields', [])
-    
-    if not selected_fields:
-        return jsonify({'error': 'No fields selected'}), 400
-    
-    # Get file data from memory
-    file_data = app.config.get('CURRENT_FILES', {})
-    if not file_data:
-        return jsonify({'error': 'No files available. Please upload files first.'}), 400
-    
-    results = []
-    
-    for filename, original_data in file_data.items():
-        try:
-            # Create filtered object maintaining hierarchical structure
-            filtered_data = create_hierarchical_output(original_data, selected_fields)
-            
-            results.append({
-                'filename': filename,
-                'data': filtered_data
-            })
-            
-        except Exception as e:
-            # Skip files that can't be processed
-            continue
-    
-    # Create content string
-    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    content_lines = [
-        f"// Generated on: {timestamp}",
-        f"// Selected fields: {len(selected_fields)}",
-        f"// Processed files: {len(results)}",
-        ""
-    ]
-    
-    for result in results:
-        content_lines.append(f"// File: {result['filename']}")
-        content_lines.append(json.dumps(result['data'], indent=2, ensure_ascii=False))
-        content_lines.append("")
-    
-    return jsonify({
-        'success': True,
-        'content': '\n'.join(content_lines)
-    })
+
 
 @app.route('/process', methods=['POST'])
 def process_files():

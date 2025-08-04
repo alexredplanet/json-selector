@@ -360,19 +360,7 @@
                     <div class="fields-container" id="fieldsContainer">
                         <!-- Fields will be populated here -->
                     </div>
-                    <div style="margin-top: 20px; padding: 20px; background: white; border-radius: 6px; border: 1px solid #e0e0e0;">
-                        <h4 style="margin-bottom: 15px; color: #2c3e50;">Download Location</h4>
-                        <div style="display: flex; gap: 10px; align-items: center;">
-                            <div style="flex: 1; padding: 10px; border: 1px solid #ddd; border-radius: 4px; background: #f8f9fa; font-family: 'Monaco', 'Menlo', monospace; font-size: 0.9rem; color: #666;" id="selectedPath">
-                                No folder selected (will use browser downloads)
-                            </div>
-                            <button type="button" class="btn" onclick="selectDownloadFolder()" style="padding: 10px 15px;">📁 Select Folder</button>
-                            <button type="button" class="btn" onclick="clearSelectedPath()" style="padding: 10px 15px; background: #6c757d;">Clear</button>
-                        </div>
-                        <p style="margin-top: 8px; color: #666; font-size: 0.85rem;">
-                            💡 Click "Select Folder" to choose where to save the results, or leave unselected to download through browser
-                        </p>
-                    </div>
+
                     <button type="button" class="btn" onclick="processFiles()" id="processBtn" style="margin-top: 20px;" disabled>
                         Generate Filtered Results
                     </button>
@@ -394,10 +382,6 @@
         let uploadedFiles = [];
         let availableFields = [];
         let fieldHierarchy = {};
-        let selectedDirectoryHandle = null;
-        
-        // Check if File System Access API is supported
-        const supportsFileSystemAccess = 'showDirectoryPicker' in window;
 
         // File upload handling
         const fileInput = document.getElementById('fileInput');
@@ -636,27 +620,7 @@
             }
         }
 
-        async function selectDownloadFolder() {
-            if (!supportsFileSystemAccess) {
-                showMessage('Directory selection not supported in this browser. Results will be downloaded normally.', 'error');
-                return;
-            }
-            
-            try {
-                selectedDirectoryHandle = await window.showDirectoryPicker();
-                document.getElementById('selectedPath').textContent = selectedDirectoryHandle.name;
-                showMessage('Download folder selected successfully!', 'success');
-            } catch (error) {
-                if (error.name !== 'AbortError') {
-                    showMessage('Error selecting folder: ' + error.message, 'error');
-                }
-            }
-        }
-        
-        function clearSelectedPath() {
-            selectedDirectoryHandle = null;
-            document.getElementById('selectedPath').textContent = 'No folder selected (will use browser downloads)';
-        }
+
 
         function updateProcessButton() {
             const checkedBoxes = document.querySelectorAll('.field-checkbox:checked');
@@ -676,49 +640,11 @@
             showLoading(true);
             clearMessages();
 
-            // If directory is selected and supported, save directly to folder
-            if (selectedDirectoryHandle && supportsFileSystemAccess) {
-                try {
-                    await saveToSelectedDirectory(selectedFields);
-                } catch (error) {
-                    showLoading(false);
-                    showMessage('Error saving to selected folder: ' + error.message, 'error');
-                }
-            } else {
-                // Fallback to browser download
-                await downloadThroughBrowser(selectedFields);
-            }
+            // Use browser download
+            await downloadThroughBrowser(selectedFields);
         }
         
-        async function saveToSelectedDirectory(selectedFields) {
-            // Get processed data from server
-            const response = await fetch('/process-data', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ fields: selectedFields })
-            });
-            
-            const data = await response.json();
-            
-            if (!data.success) {
-                throw new Error(data.error || 'Unknown error');
-            }
-            
-            // Create file in selected directory
-            const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
-            const filename = `filtered_results_${timestamp}.txt`;
-            
-            const fileHandle = await selectedDirectoryHandle.getFileHandle(filename, { create: true });
-            const writable = await fileHandle.createWritable();
-            
-            await writable.write(data.content);
-            await writable.close();
-            
-            showLoading(false);
-            showMessage(`File saved successfully as: ${filename}`, 'success');
-        }
+
         
         async function downloadThroughBrowser(selectedFields) {
             try {
