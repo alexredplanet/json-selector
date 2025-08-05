@@ -7,9 +7,21 @@ import tempfile
 from datetime import datetime
 from werkzeug.utils import secure_filename
 from werkzeug.exceptions import RequestEntityTooLarge
+import logging
+import sys
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 1024 * 1024 * 1024  # 1GB max file size
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout)
+    ]
+)
+logger = logging.getLogger(__name__)
 
 @app.errorhandler(RequestEntityTooLarge)
 def handle_file_too_large(e):
@@ -122,22 +134,34 @@ def set_nested_value(data, path, value):
         current[final_key] = value
 
 @app.route('/')
+@app.route('/json-selector')
+@app.route('/json-selector/')
 def index():
     return render_template('index.html')
 
 @app.route('/default-path')
+@app.route('/json-selector/default-path')
 def get_default_path():
     return jsonify({
-        'defaultPath': app.config['DEFAULT_DOWNLOAD_FOLDER']
+        'path': '/json-selector'
     })
 
 @app.route('/upload', methods=['POST'])
+@app.route('/json-selector/upload', methods=['POST'])
 def upload_files():
+    logger.info(f"Upload request received from {request.remote_addr}")
+    logger.info(f"Request path: {request.path}")
+    logger.info(f"Request files: {list(request.files.keys())}")
+    
     if 'files' not in request.files:
+        logger.warning("No files in request")
         return jsonify({'error': 'No files uploaded'}), 400
     
     files = request.files.getlist('files')
+    logger.info(f"Found {len(files)} files in request")
+    
     if not files or all(f.filename == '' for f in files):
+        logger.warning("No valid files selected")
         return jsonify({'error': 'No files selected'}), 400
     
     json_files = []
@@ -186,7 +210,9 @@ def upload_files():
             'message': f'Some files could not be processed ({len(invalid_files)} files)',
             'details': invalid_files
         }
+        logger.warning(f"Invalid files: {invalid_files}")
     
+    logger.info(f"Successfully processed {len(json_files)} files with {len(all_fields)} fields")
     return jsonify(response_data)
 
 def create_hierarchical_output(original_data, selected_fields):
@@ -228,6 +254,7 @@ def create_hierarchical_output(original_data, selected_fields):
 
 
 @app.route('/process', methods=['POST'])
+@app.route('/json-selector/process', methods=['POST'])
 def process_files():
     """Original endpoint for browser download fallback"""
     data = request.get_json()
