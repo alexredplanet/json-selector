@@ -428,7 +428,7 @@
             showLoading(true);
             clearMessages();
 
-            fetch('/upload', {
+            fetch('/json-selector/upload', {
                 method: 'POST',
                 body: formData
             })
@@ -648,7 +648,7 @@
         
         async function downloadThroughBrowser(selectedFields) {
             try {
-                const response = await fetch('/process', {
+                const response = await fetch('/json-selector/process', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
