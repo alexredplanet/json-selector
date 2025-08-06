@@ -86,12 +86,12 @@ def get_nested_value(data, path):
         
         for key in keys:
             if '[0]' in key:
-                # Handle array access
+                # Handle array access - return the array itself, not just first item
                 key = key.replace('[0]', '')
                 if key:
                     current = current[key]
-                if isinstance(current, list) and current:
-                    current = current[0]
+                # Don't take just the first item - return the whole array
+                # The processing logic will handle iterating through array items
             else:
                 current = current[key]
         
@@ -215,6 +215,63 @@ def upload_files():
     logger.info(f"Successfully processed {len(json_files)} files with {len(all_fields)} fields")
     return jsonify(response_data)
 
+def process_array_fields(array_data, selected_fields, array_path_prefix=""):
+    """Process an array and extract selected fields from each item"""
+    if not isinstance(array_data, list):
+        return array_data
+    
+    processed_items = []
+    
+    for item in array_data:
+        if isinstance(item, dict):
+            # Extract selected fields from this array item
+            filtered_item = {}
+            
+            for field in selected_fields:
+                # Remove array prefix to get the field path within the item
+                if array_path_prefix and field.startswith(array_path_prefix + '.'):
+                    item_field = field[len(array_path_prefix + '.'):]
+                elif array_path_prefix and field.startswith(array_path_prefix + '[0].'):
+                    item_field = field[len(array_path_prefix + '[0].'):]
+                elif not array_path_prefix:
+                    item_field = field
+                else:
+                    continue
+                
+                # Get value from the current array item
+                item_value = get_nested_value_from_item(item, item_field)
+                if item_value is not None:
+                    set_nested_value(filtered_item, item_field, item_value)
+            
+            if filtered_item:  # Only add if we extracted some fields
+                processed_items.append(filtered_item)
+        else:
+            # Non-dict items in array, keep as-is
+            processed_items.append(item)
+    
+    return processed_items
+
+def get_nested_value_from_item(data, path):
+    """Get value from nested JSON using dot notation path (for single items, not arrays)"""
+    try:
+        keys = path.split('.')
+        current = data
+        
+        for key in keys:
+            if '[0]' in key:
+                # Handle array access within the item
+                key = key.replace('[0]', '')
+                if key:
+                    current = current[key]
+                if isinstance(current, list) and current:
+                    current = current[0]
+            else:
+                current = current[key]
+        
+        return current
+    except (KeyError, IndexError, TypeError):
+        return None
+
 def create_hierarchical_output(original_data, selected_fields):
     """Create output that maintains hierarchical structure for selected fields"""
     filtered_data = {}
@@ -222,32 +279,49 @@ def create_hierarchical_output(original_data, selected_fields):
     # Sort fields to process parents before children
     sorted_fields = sorted(selected_fields, key=lambda x: (x.count('.'), x))
     
+    # Group fields by their top-level path to handle arrays properly
+    field_groups = {}
     for field in sorted_fields:
-        value = get_nested_value(original_data, field)
-        if value is not None:
-            # Check if this field is a parent of other selected fields
-            child_fields = [f for f in selected_fields if f.startswith(field + '.') or f.startswith(field + '[')]
-            
-            if child_fields:
-                # This is a parent field with selected children
-                # Only include the selected child fields, not the entire parent
-                parent_structure = {}
-                for child_field in child_fields:
-                    child_value = get_nested_value(original_data, child_field)
-                    if child_value is not None:
-                        # Get the relative path from parent to child
-                        relative_path = child_field[len(field):].lstrip('.')
-                        if relative_path:  # Only if there's actually a child path
-                            set_nested_value(parent_structure, relative_path, child_value)
-                
-                if parent_structure:
-                    set_nested_value(filtered_data, field, parent_structure)
-                else:
-                    # No valid children, include the parent value
-                    set_nested_value(filtered_data, field, value)
-            else:
-                # This is a leaf field or parent with no selected children
-                set_nested_value(filtered_data, field, value)
+        top_level = field.split('.')[0].replace('[0]', '')
+        if top_level not in field_groups:
+            field_groups[top_level] = []
+        field_groups[top_level].append(field)
+    
+    for top_level_field, related_fields in field_groups.items():
+        # Check if this is an array field
+        top_level_value = get_nested_value(original_data, top_level_field)
+        
+        if isinstance(top_level_value, list):
+            # This is an array - process all items
+            processed_array = process_array_fields(top_level_value, related_fields, top_level_field)
+            set_nested_value(filtered_data, top_level_field, processed_array)
+        else:
+            # Regular field processing
+            for field in related_fields:
+                value = get_nested_value(original_data, field)
+                if value is not None:
+                    # Check if this field is a parent of other selected fields
+                    child_fields = [f for f in selected_fields if f.startswith(field + '.') or f.startswith(field + '[')]
+                    
+                    if child_fields:
+                        # This is a parent field with selected children
+                        parent_structure = {}
+                        for child_field in child_fields:
+                            child_value = get_nested_value(original_data, child_field)
+                            if child_value is not None:
+                                # Get the relative path from parent to child
+                                relative_path = child_field[len(field):].lstrip('.')
+                                if relative_path:  # Only if there's actually a child path
+                                    set_nested_value(parent_structure, relative_path, child_value)
+                        
+                        if parent_structure:
+                            set_nested_value(filtered_data, field, parent_structure)
+                        else:
+                            # No valid children, include the parent value
+                            set_nested_value(filtered_data, field, value)
+                    else:
+                        # This is a leaf field or parent with no selected children
+                        set_nested_value(filtered_data, field, value)
     
     return filtered_data
 
